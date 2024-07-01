@@ -21,6 +21,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import schedule
 import time
+from config import MONGODB_URI
 
 
 app = FastAPI()
@@ -38,9 +39,9 @@ app.add_middleware(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-mongodb_uri = 'mongodb+srv://admin:admin@cluster.xfybzay.mongodb.net/?retryWrites=true&w=majority&appName=Cluster'
+
 port = 8000
-client = MongoClient(mongodb_uri, port)
+client = MongoClient(MONGODB_URI, port)
 db = client["Book_Review"]
 
 
@@ -241,7 +242,7 @@ def run_scraper_job():
     else:
         print("Failed to scrape books")
 
-#schedule the scraper job to run every day at a specific time (adjust as needed)
+#schedule the scraper job to run every day at a specific time
 schedule.every().day.at("12:00").do(run_scraper_job)
 
 #ssynchronous task manager to run scheduled jobs
