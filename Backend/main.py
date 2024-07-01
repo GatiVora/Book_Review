@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Depends, Request,status
+from fastapi import FastAPI, HTTPException, Depends, Request,status,Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from hashing import Hash
@@ -8,13 +8,15 @@ from auth import get_current_user
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
-from models import User , Login , Token ,TokenData
+from models import User , Login , Token ,TokenData,Book
 from models import Review, ReviewUpdate
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from jwttoken import SECRET_KEY,ALGORITHM
-
+from typing import List
 import requests
+import httpx
+import asyncio
 from bs4 import BeautifulSoup
 
 app = FastAPI()
@@ -129,3 +131,46 @@ def delete_review(review_id: str, current_user: User = Depends(get_current_user)
     return {"res": "Review deleted"}
 
 
+#Function to scrape Open Library's trending books
+def scrape_open_library_trending_books():
+    url = 'https://openlibrary.org/trending/daily'
+    response = requests.get(url)
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.content, 'html.parser')
+        books = []
+        for book_elem in soup.select('.booktitle'):
+            title_elem = book_elem.find('a', class_='results')
+            if title_elem:
+                title = title_elem.text.strip()
+                link = title_elem['href']
+                books.append({'title': title, 'link': link})
+        return books
+    else:
+        return None
+
+#Store scraped books in MongoDB
+def store_books_in_mongodb(books):
+    if books:
+        for book in books:
+            db["books"].update_one(
+                {'title': book['title']},
+                {'$set': book},
+                upsert=True
+            )
+
+#endpoint to scrape and store books
+@app.post("/scrape_books", status_code=201)
+def scrape_and_store_books():
+    books = scrape_open_library_trending_books()
+    if books:
+        store_books_in_mongodb(books)
+        return {"message": "Books scraped and stored successfully"}
+    else:
+        return {"message": "Failed to scrape books"}
+
+#endpoint to retrieve scraped books
+@app.get("/books", response_model=List[Book])
+def get_books(page: int = Query(1, description="Page number"), size: int = Query(10, description="Page size")):
+    skip = (page - 1) * size
+    books = list(db["books"].find().skip(skip).limit(size))
+    return books

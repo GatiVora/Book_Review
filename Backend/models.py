@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends, Request,status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel,Field
-
+from typing import List
 
 class User(BaseModel):
     username: str
@@ -28,3 +28,8 @@ class Review(BaseModel):
 class ReviewUpdate(BaseModel):
     rating:Optional[str] =None
     comment:Optional[str] = None
+
+
+class Book(BaseModel):
+    title: str
+    link:str
