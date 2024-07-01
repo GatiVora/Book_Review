@@ -19,6 +19,8 @@ import httpx
 import asyncio
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+import schedule
+import time
 
 
 app = FastAPI()
@@ -227,3 +229,28 @@ def scrape_and_store_books():
         return {"message": "Books scraped and stored successfully"}
     else:
         return {"message": "Failed to scrape books"}
+
+
+#scheduler function to run the web scraper periodically
+def run_scraper_job():
+    print("Running scraper job...")
+    books = scrape_open_library_trending_books()
+    if books:
+        store_books_in_mongodb(books)
+        print("Books scraped and stored successfully")
+    else:
+        print("Failed to scrape books")
+
+#schedule the scraper job to run every day at a specific time (adjust as needed)
+schedule.every().day.at("12:00").do(run_scraper_job)
+
+#ssynchronous task manager to run scheduled jobs
+async def scheduler():
+    while True:
+        schedule.run_pending()
+        await asyncio.sleep(1)
+
+#start the scheduler
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(scheduler())
