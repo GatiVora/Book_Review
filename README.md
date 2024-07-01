@@ -17,7 +17,7 @@ This repository contains the backend implementation for a book review platform u
 -Scheduler: Automate periodic scraping of book data to keep the database updated
 ## Configuration
 
-Before running the project, set the following environment variables. Modify them according to your specific setup:
+Before running the project modify below according to your specific setup:
 
 
 
