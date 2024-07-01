@@ -7,7 +7,7 @@ from jwttoken import create_access_token
 from auth import get_current_user
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from pymongo import MongoClient
+from pymongo import MongoClient,ASCENDING, DESCENDING 
 from models import User , Login , Token ,TokenData,Book
 from models import Review, ReviewUpdate
 from fastapi.security import OAuth2PasswordBearer
@@ -18,6 +18,8 @@ import requests
 import httpx
 import asyncio
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
 
 app = FastAPI()
 origins = [
@@ -131,24 +133,50 @@ def delete_review(review_id: str, current_user: User = Depends(get_current_user)
     return {"res": "Review deleted"}
 
 
-#Function to scrape Open Library's trending books
 def scrape_open_library_trending_books():
     url = 'https://openlibrary.org/trending/daily'
     response = requests.get(url)
     if response.status_code == 200:
         soup = BeautifulSoup(response.content, 'html.parser')
         books = []
-        for book_elem in soup.select('.booktitle'):
-            title_elem = book_elem.find('a', class_='results')
+        for book_elem in soup.select('.details'):
+            # Extract title
+            title_elem = book_elem.find('h3', class_='booktitle')
             if title_elem:
-                title = title_elem.text.strip()
-                link = title_elem['href']
-                books.append({'title': title, 'link': link})
+                title_link_elem = title_elem.find('a', class_='results')
+                title = title_link_elem.text.strip()
+                link = urljoin(url, title_link_elem['href'])
+
+                # Extract author
+                author_elem = book_elem.find('span', class_='bookauthor')
+                if author_elem:
+                    author_link_elem = author_elem.find('a', class_='results')
+                    author = author_link_elem.text.strip().replace('by ', '').strip()
+                else:
+                    author = ''
+
+                # Extract other details (published year, editions)
+                publisher_elem = book_elem.find('span', class_='resultPublisher')
+                if publisher_elem:
+                    published_year_elem = publisher_elem.find('span', class_='publishedYear')
+                    if published_year_elem:
+                        published_year = published_year_elem.text.strip()
+                    else:
+                        published_year = ''
+                else:
+                    published_year = ''
+
+                books.append({
+                    'title': title,
+                    'link': link,
+                    'author': author,
+                    'published_year': published_year
+                })
+
         return books
     else:
         return None
-
-#Store scraped books in MongoDB
+#function to store scraped books in MongoDB
 def store_books_in_mongodb(books):
     if books:
         for book in books:
@@ -158,7 +186,39 @@ def store_books_in_mongodb(books):
                 upsert=True
             )
 
-#endpoint to scrape and store books
+
+#function to retrieve books from MongoDB with search, filter, and sort options
+def get_books_from_db(page: int = 1, size: int = 10, title_query: str = None, author_query: str = None, sort_by: str = None):
+    skip = (page - 1) * size
+    query = {}
+
+    if title_query:
+        query['title'] = {'$regex': f'.*{title_query}.*', '$options': 'i'}  # Case-insensitive regex search for title
+
+    if author_query:
+        query['author'] = {'$regex': f'.*{author_query}.*', '$options': 'i'}  # Case-insensitive regex search for author
+
+    sort_order = ASCENDING  # Default sorting order
+    if sort_by == 'title_desc':
+        sort_order = DESCENDING
+
+    # Fetch books with query and sort
+    books = list(db["books"].find(query).sort([('title', sort_order)]).skip(skip).limit(size))
+    return books
+
+#endpoint to retrieve scraped books with search, filter, and sort options
+@app.get("/books", response_model=List[Book])
+def get_books(
+    page: int = Query(1, description="Page number"),
+    size: int = Query(10, description="Page size"),
+    title_query: str = Query(None, description="Search books by title"),
+    author_query: str = Query(None, description="Search books by author"),
+    sort_by: str = Query(None, description="Sort books by title (title_desc for descending)")
+):
+    books = get_books_from_db(page, size, title_query, author_query, sort_by)
+    return books
+
+#endpoint to scrape and store books (unchanged from previous code snippet)
 @app.post("/scrape_books", status_code=201)
 def scrape_and_store_books():
     books = scrape_open_library_trending_books()
@@ -167,10 +227,3 @@ def scrape_and_store_books():
         return {"message": "Books scraped and stored successfully"}
     else:
         return {"message": "Failed to scrape books"}
-
-#endpoint to retrieve scraped books
-@app.get("/books", response_model=List[Book])
-def get_books(page: int = Query(1, description="Page number"), size: int = Query(10, description="Page size")):
-    skip = (page - 1) * size
-    books = list(db["books"].find().skip(skip).limit(size))
-    return books

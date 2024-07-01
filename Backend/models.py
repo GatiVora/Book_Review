@@ -33,3 +33,5 @@ class ReviewUpdate(BaseModel):
 class Book(BaseModel):
     title: str
     link:str
+    author:str
+    published_year:str
